@@ -1,0 +1,37 @@
+version: "3.9"
+
+services:
+  api:
+    image: myshopapi:latest
+    build: .
+    ports:
+      - "7172:80" # Kestrel внутри контейнера на 80, снаружи на 7172
+    environment:
+      - POSTGRES_CONNECTION=Host=db;Port=5432;Database=myshop;Username=postgres;Password=postgres
+      - REDIS_CONNECTION=redis:6379
+    depends_on:
+      - db
+      - redis
+
+  nginx:
+    image: nginx:latest
+    ports:
+      - "80:80" # Nginx доступен на http://localhost
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: myshop
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
