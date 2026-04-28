@@ -1,54 +1,5 @@
 // Program.cs
 
-using Microsoft.EntityFrameworkCore;
-using MyShopApi.Data;
-using MyShopApi.Models;
-using MyShopApi.Services;
-using MyShopApi.Delegates;
-using StackExchange.Redis;
-using Redis = StackExchange.Redis;
-using MyModels = MyShopApi.Models;
-using Prometheus;
-// Program.cs
-
-
-
-var builder = WebApplication.CreateBuilder(args);
-
-// ----------------- База данных -----------------
-var connStr = Environment.GetEnvironmentVariable("POSTGRES_CONNECTION")
-    ?? "Host=127.0.0.1;Port=5432;Database=myshop;Username=postgres;Password=postgres";
-builder.Services.AddDbContext<ShopDbContext>(o => o.UseNpgsql(connStr));
-
-// ----------------- Redis -----------------
-var redisConn = Environment.GetEnvironmentVariable("REDIS_CONNECTION") ?? "localhost:6379,abortConnect=false";
-builder.Services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Connect(redisConn));
-
-// ----------------- Swagger -----------------
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
-
-// ----------------- ApiService -----------------
-builder.Services.AddHttpClient<ApiService>();
-
-var app = builder.Build();
-app.UseDefaultFiles(); // ищет index.html в wwwroot
-app.UseStaticFiles();  // отдаёт статику
-
-app.MapGet("/", () => Results.Redirect("/index.html"));
-app.UseHttpMetrics();
-if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); }
-app.UseHttpsRedirection();
-
-// ----------------- Redis кэш -----------------
-var cache = app.Services.GetRequiredService<IConnectionMultiplexer>().GetDatabase();
-
-var ProductsCreated =
-Metrics.CreateCounter(
-    "products_created_total",
-    "Количество созданных товаров"
-);
-
 /*
 var builder = WebApplication.CreateBuilder(args);
 
@@ -89,8 +40,256 @@ Metrics.CreateCounter(
 
 
 */
+/*
+using Microsoft.AspNetCore.Mvc;
+using MyShopApi.Models;
+using System.Text.Json.Serialization;
+
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddControllers()
+    .AddJsonOptions(opts => opts.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles);
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+var app = builder.Build();
+
+// Простые in-memory хранилища
+var products = new List<Product>();
+var customers = new List<Customer>();
+var orders = new List<Order>();
+var deliveries = new List<Delivery>();
+int nextProductId = 1, nextCustomerId = 1, nextOrderId = 1, nextDeliveryId = 1;
+
+app.UseSwagger();
+app.UseSwaggerUI();
+
+app.MapGet("/api/products", () => Results.Ok(products));
+app.MapGet("/api/products/{id}", (int id) =>
+{
+    var product = products.FirstOrDefault(p => p.Id == id);
+    return product is null ? Results.NotFound() : Results.Ok(product);
+});
+app.MapPost("/api/products", (Product product) =>
+{
+    product.Id = nextProductId++;
+    products.Add(product);
+    return Results.Created($"/api/products/{product.Id}", product);
+});
+app.MapPut("/api/products/{id}", (int id, Product updated) =>
+{
+    var product = products.FirstOrDefault(p => p.Id == id);
+    if (product is null) return Results.NotFound();
+    product.Name = updated.Name;
+    product.Price = updated.Price;
+    product.Stock = updated.Stock;
+    return Results.Ok(product);
+});
+app.MapDelete("/api/products/{id}", (int id) =>
+{
+    var product = products.FirstOrDefault(p => p.Id == id);
+    if (product is null) return Results.NotFound();
+    products.Remove(product);
+    return Results.NoContent();
+});
+
+// Аналогично для Customers (минимум)
+app.MapGet("/api/customers", () => Results.Ok(customers));
+app.MapPost("/api/customers", (Customer customer) =>
+{
+    customer.Id = nextCustomerId++;
+    customers.Add(customer);
+    return Results.Created($"/api/customers/{customer.Id}", customer);
+});
+// Добавьте PUT, DELETE, GET по id по аналогии (или просто для примера)
+
+app.MapGet("/", () => Results.Redirect("/swagger"));
+app.Run();
+*/
+using Microsoft.AspNetCore.Mvc;
+using MyShopApi.Models;
+using System.Text.Json.Serialization;
+
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddControllers()
+    .AddJsonOptions(opts => opts.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles);
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+var app = builder.Build();
+
+// Простые in-memory хранилища
+var products = new List<Product>();
+var customers = new List<Customer>();
+var orders = new List<Order>();
+var deliveries = new List<Delivery>();
+int nextProductId = 1, nextCustomerId = 1, nextOrderId = 1, nextDeliveryId = 1;
+
+app.UseSwagger();
+app.UseSwaggerUI();
+
+app.MapGet("/api/products", () => Results.Ok(products));
+app.MapGet("/api/products/{id}", (int id) =>
+{
+    var product = products.FirstOrDefault(p => p.Id == id);
+    return product is null ? Results.NotFound() : Results.Ok(product);
+});
+app.MapPost("/api/products", (Product product) =>
+{
+    product.Id = nextProductId++;
+    products.Add(product);
+    return Results.Created($"/api/products/{product.Id}", product);
+});
+app.MapPut("/api/products/{id}", (int id, Product updated) =>
+{
+    var product = products.FirstOrDefault(p => p.Id == id);
+    if (product is null) return Results.NotFound();
+    product.Name = updated.Name;
+    product.Price = updated.Price;
+    product.Stock = updated.Stock;
+    return Results.Ok(product);
+});
+app.MapDelete("/api/products/{id}", (int id) =>
+{
+    var product = products.FirstOrDefault(p => p.Id == id);
+    if (product is null) return Results.NotFound();
+    products.Remove(product);
+    return Results.NoContent();
+});
+
+// Аналогично для Customers (минимум)
+app.MapGet("/api/customers", () => Results.Ok(customers));
+app.MapPost("/api/customers", (Customer customer) =>
+{
+    customer.Id = nextCustomerId++;
+    customers.Add(customer);
+    return Results.Created($"/api/customers/{customer.Id}", customer);
+});
+// Добавьте PUT, DELETE, GET по id по аналогии (или просто для примера)
+
+app.MapGet("/", () => Results.Redirect("/swagger"));
+app.Run();
+
+/*
+using Microsoft.EntityFrameworkCore;
+using MyShopApi.Data;
+using MyShopApi.Services;
+using Prometheus;
+using StackExchange.Redis;
+using System.Net.Sockets;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Configuration.AddEnvironmentVariables();
+
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+var connStr = Environment.GetEnvironmentVariable("POSTGRES_CONNECTION")
+              ?? builder.Configuration.GetConnectionString("Postgres")
+              ?? "Host=localhost;Port=5432;Database=myshop;Username=postgres;Password=postgres";
+builder.Services.AddDbContext<ShopDbContext>(options => options.UseNpgsql(connStr));
+
+var redisConn = Environment.GetEnvironmentVariable("REDIS_CONNECTION")
+                ?? builder.Configuration.GetConnectionString("Redis")
+                ?? "localhost:6379,abortConnect=false";
+builder.Services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Connect(redisConn));
+builder.Services.AddScoped<ICacheService, RedisCacheService>();
+
+builder.Services.AddScoped<IProductService, ProductService>();
+builder.Services.AddScoped<ICustomerService, CustomerService>();
+builder.Services.AddScoped<IOrderService, OrderService>();
+builder.Services.AddScoped<IDeliveryService, DeliveryService>();
+builder.Services.AddHealthChecks();
+
+var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<ShopDbContext>();
+    await dbContext.Database.MigrateAsync();
+    await SeedData.InitializeAsync(app.Services);
+}
+
+// Статические файлы (нужны для CSS/JS Swagger UI)
+app.UseStaticFiles();
+
+// Swagger с явным указанием конечной точки
+app.UseSwagger();
+app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "MyShop API V1"));
+
+app.UseHttpsRedirection();
+app.UseRouting();
+app.UseHttpMetrics();
+app.MapControllers();
+app.MapMetrics();
+
+app.MapGet("/", () => Results.Redirect("/swagger"));
+
+app.Run();
+
+*/
 
 
+
+
+
+
+
+
+
+
+
+/*
+
+using Microsoft.EntityFrameworkCore;
+using MyShopApi.Data;
+using MyShopApi.Models;
+using MyShopApi.Services;
+using MyShopApi.Delegates;
+using StackExchange.Redis;
+using Redis = StackExchange.Redis;
+using MyModels = MyShopApi.Models;
+using Prometheus;
+// Program.cs
+
+
+
+var builder = WebApplication.CreateBuilder(args);
+
+// База данных 
+var connStr = Environment.GetEnvironmentVariable("POSTGRES_CONNECTION")
+    ?? "Host=127.0.0.1;Port=5432;Database=myshop;Username=postgres;Password=postgres";
+builder.Services.AddDbContext<ShopDbContext>(o => o.UseNpgsql(connStr));
+
+// ----------------- Redis
+var redisConn = Environment.GetEnvironmentVariable("REDIS_CONNECTION") ?? "localhost:6379,abortConnect=false";
+builder.Services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer.Connect(redisConn));
+
+//  Swagger 
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+//  ApiService
+builder.Services.AddHttpClient<ApiService>();
+
+var app = builder.Build();
+app.UseDefaultFiles(); // ищет index.html в wwwroot
+app.UseStaticFiles();  // отдаёт статику
+
+app.MapGet("/", () => Results.Redirect("/index.html"));
+app.UseHttpMetrics();
+if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); }
+app.UseHttpsRedirection();
+
+// Redis кэш 
+var cache = app.Services.GetRequiredService<IConnectionMultiplexer>().GetDatabase();
+
+var ProductsCreated =
+Metrics.CreateCounter(
+    "products_created_total",
+    "Количество созданных товаров"
+);
 
 
 
@@ -196,7 +395,7 @@ app.MapGet("/buy/{id}", async (int id, ShopDbContext db) =>
 
 
 
-// ----------------- CRUD для Product -----------------
+// CRUD для Product 
 app.MapGet("/products", async (ShopDbContext db) =>
 {
     string key = "products_all";
@@ -217,7 +416,7 @@ app.MapPost("/products", async (Product product, ShopDbContext db) =>
     return Results.Created($"/products/{product.Id}", product);
 });
 
-// ----------------- Аналогично можно добавить Customers, Orders, Delivery -----------------
+//Customers, Orders, Delivery 
 app.MapPost("/customers", async (Customer customer, ShopDbContext db) =>
 {
     db.Customers.Add(customer);
@@ -320,7 +519,7 @@ handler += RequestHandlers.LogToConsole;
 
 apiService.RequestCompleted += handler;
 app.MapMetrics();
-app.Run();
+app.Run();*/
 /*
 using Microsoft.EntityFrameworkCore;
 using MyShopApi.Data;

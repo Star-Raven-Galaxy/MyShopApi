@@ -1,22 +1,19 @@
-# ----------------- Сборка -----------------
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
 WORKDIR /app
-
-# Копируем csproj и восстанавливаем зависимости
-COPY *.csproj ./
-RUN dotnet restore
-
-# Копируем весь проект и собираем
-COPY . ./
-RUN dotnet publish -c Release -o out
-
-# ----------------- РUNTIME -----------------
-FROM mcr.microsoft.com/dotnet/aspnet:8.0
-WORKDIR /app
-COPY --from=build /app/out .
-
-# Открываем порт 80 для API
 EXPOSE 80
+EXPOSE 443
 
-# Точка входа
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+COPY ["MyShopApi.csproj", "."]
+RUN dotnet restore "./MyShopApi.csproj"
+COPY . .
+RUN dotnet build "MyShopApi.csproj" -c Release -o /app/build
+
+FROM build AS publish
+RUN dotnet publish "MyShopApi.csproj" -c Release -o /app/publish
+
+FROM base AS final
+WORKDIR /app
+COPY --from=publish /app/publish .
 ENTRYPOINT ["dotnet", "MyShopApi.dll"]

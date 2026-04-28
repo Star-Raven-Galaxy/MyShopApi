@@ -1,37 +1,104 @@
-version: "3.9"
+version: '3.8'
 
 services:
-  api:
-    image: myshopapi:latest
-    build: .
-    ports:
-      - "7172:80" # Kestrel внутри контейнера на 80, снаружи на 7172
-    environment:
-      - POSTGRES_CONNECTION=Host=db;Port=5432;Database=myshop;Username=postgres;Password=postgres
-      - REDIS_CONNECTION=redis:6379
-    depends_on:
-      - db
-      - redis
-
-  nginx:
-    image: nginx:latest
-    ports:
-      - "80:80" # Nginx доступен на http://localhost
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      - api
-
-  db:
+  # ========== PostgreSQL ==========
+  postgres:
     image: postgres:15
+    container_name: myshop_postgres
     environment:
+      POSTGRES_DB: myshop
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: myshop
     ports:
       - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
+  # ========== Redis ==========
   redis:
     image: redis:7
+    container_name: myshop_redis
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ========== ASP.NET Core Web API ==========
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: myshop_api
+    environment:
+      POSTGRES_CONNECTION: "Host=postgres;Port=5432;Database=myshop;Username=postgres;Password=postgres"
+      REDIS_CONNECTION: "redis:6379,abortConnect=false"
+      ASPNETCORE_ENVIRONMENT: "Development"
+      ASPNETCORE_URLS: "http://+:80"  
+    ports:
+      - "5000:8080" 
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ========== Nginx (обратный прокси) ==========
+  nginx:
+    image: nginx:alpine
+    container_name: myshop_nginx
+    volumes:
+      - ./default.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # ========== Prometheus (сбор метрик) ==========
+  prometheus:
+    image: prom/prometheus
+    container_name: myshop_prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # ========== Grafana (визуализация метрик) ==========
+  grafana:
+    image: grafana/grafana
+    container_name: myshop_grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
